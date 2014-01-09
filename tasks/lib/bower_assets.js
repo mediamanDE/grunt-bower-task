@@ -5,36 +5,28 @@ var grunt = require('grunt');
 var packageMatcher = require('./package_matcher');
 
 var Assets = function(cwd, componentsDir) {
-  this._assets = {};
+  this._assets = { __untyped__: {} };
   this._cwd = cwd;
   this._componentsDir = componentsDir;
 };
 
 Assets.prototype.addOverridden = function(override, pkg) {
-  var pkgPath = path.join(this._componentsDir, pkg);
-
   _(override).each(function(overriddenPaths, assetType) {
-    this.addAssets(overriddenPaths, pkg, assetType, pkgPath);
+    var pkgPath = path.join(this._componentsDir, pkg);
+    var basePath = path.join(this._cwd, pkgPath);
+
+    this._assets[assetType] = this._assets[assetType] || {};
+    this._assets[assetType][pkg] = _(grunt.file.expand({cwd: basePath}, overriddenPaths)).map(function(expandedPath) {
+      return path.join(pkgPath, expandedPath);
+    });
   }, this);
 };
 
 Assets.prototype.addUntyped = function(pkgFiles, pkg) {
-  this.addAssets(pkgFiles, pkg, '__untyped__');
-};
-
-Assets.prototype.addAssets = function(filePatterns, pkg, assetType, pkgPath) {
-  pkgPath = pkgPath || '';
-
-  if (!_.isArray(filePatterns)) {
-    filePatterns = [ filePatterns ];
+  if (!_.isArray(pkgFiles)) {
+    pkgFiles = [ pkgFiles ];
   }
-
-  var basePath = path.join(this._cwd, pkgPath);
-
-  this._assets[assetType] = this._assets[assetType] || {};
-  this._assets[assetType][pkg] = _(grunt.file.expand({cwd: basePath}, filePatterns)).map(function(expandedPath) {
-    return path.join(pkgPath, expandedPath);
-  });
+  this._assets['__untyped__'][pkg] = pkgFiles;
 };
 
 Assets.prototype.toObject = function() {
@@ -58,41 +50,16 @@ BowerAssets.prototype.get = function() {
   var exportsOverride = bowerConfig.exportsOverride;
 
   var paths = bower.commands.list({paths: true});
+
   paths.on('end', function(data) {
-    this.emit('end', this.mergePaths(data, exportsOverride ? exportsOverride : {}));
+    this.emit('end');
   }.bind(this));
+
   paths.on('error', function(err) {
     this.emit('error', err);
   }.bind(this));
 
   return this;
-};
-
-/**
- *
- * @param bowerComponents - output of 'bower list' command
- * @param overrides - overrides coming from 'bower.json'
- *
- * @returns assets grouped by component and type
- */
-BowerAssets.prototype.mergePaths = function(bowerComponents, overrides) {
-  var findOverride = function(pkg) {
-    return _(overrides).find(function(override, override_key) {
-      return packageMatcher.matches(pkg, override_key);
-    });
-  };
-
-  _(bowerComponents).each(function(pkgFiles, pkg) {
-    var activeOverride = findOverride(pkg);
-
-    if (activeOverride) {
-      this.assets.addOverridden(activeOverride, pkg);
-    } else {
-      this.assets.addUntyped(pkgFiles, pkg);
-    }
-  }, this);
-
-  return this.assets.toObject();
 };
 
 module.exports = BowerAssets;
